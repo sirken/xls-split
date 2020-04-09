@@ -1,0 +1,151 @@
+#!/usr/bin/env python3
+
+import openpyxl
+import os
+import sys
+import math
+
+
+input_file = ""
+max_rows_per_file = 100
+
+
+# Leading zeroes for num_files_split visual, for filesystem sorting
+def add_leading_zeroes(num):
+    # Get length of string for total number of files
+    num_files_str_len = len(str(num_files_split))
+    # Add leading zeroes
+    num_files_split_visual = str(num).zfill(num_files_str_len)
+    return num_files_split_visual
+
+
+# CLI arguments (first arguemnt is the filename, second filename)
+if len(sys.argv) < 2:
+    fname = sys.argv[0].split('/')
+    fname = fname[-1]
+    print(f'\r\nSplit xls into multiple files (default {max_rows_per_file} rows each). Usage: ')
+    print(f'    ./{fname} "/path/to/file.xls"')
+    print('')
+    print('Specifiy number of rows per file (optional):')
+    print(f'    ./{fname} "/path/to/file.xls" [rows]')
+    print('')
+    quit()
+else:
+    input_file = sys.argv[1]
+    try:
+        max_rows_per_file = int(sys.argv[2])
+    except:
+        pass
+
+# Set actual number of records per file (not including header)
+max_records_per_file = max_rows_per_file - 1
+# Set output file base name
+output_file = input_file + "-split-" # Start of output file names
+
+
+
+print(f"Target file size: {max_rows_per_file} rows")
+print(f"Checking xls file...")
+
+# Open the workbook
+wb = openpyxl.load_workbook(input_file)
+# Active sheet
+ws = wb.active
+# Get number of rows
+total_row_count = ws.max_row
+# Total number of records (not including header)
+total_records = total_row_count - 1
+
+# Number of files we will split into
+num_files_split = 1
+
+# Check if this file needs to be split
+if total_row_count <= max_rows_per_file:
+    print(f"Found {total_row_count} rows, there is no need to split")
+    raise SystemExit()
+else:
+    # Get target number of split files
+    num_files_split = math.ceil((total_records / max_records_per_file))
+    print(f"Found {total_row_count} rows, splitting into {num_files_split} files...")
+
+
+
+print("Gathering xls data...")
+
+# List for storing header values
+xls_headers = []
+
+# Loop through first row, save header values
+for row_cells in ws.iter_rows(min_row=1, max_row=1):
+    for cell in row_cells:
+        xls_headers.append(cell.value)
+
+# Keep track of which file we're on
+file_num = 0
+# File name for each split file
+file_split_name = ""
+# Keep track of which row we are on in each split file
+row_count_split_file = 1
+# Workbook container
+wb_output = ""
+
+# Start a new split xls file
+def start_new_split_xls():
+    # Initialize variables
+    global xls_headers, file_num, file_split_name, row_count_split_file, wb_output
+
+    # Reset temporary split file count
+    row_count_split_file = 1
+    # Increment the file number
+    file_num += 1
+    file_split_name = output_file + add_leading_zeroes(file_num) + ".xlsx"
+
+    # Show how many rows per file
+    rows_visual = 0
+    # If current file number * max_records_per_file exceeds total_records, then we're on the last file. Show remainder
+    # Add 1 to include header
+    if file_num * max_records_per_file > total_records:
+        rows_visual = (total_records % max_records_per_file) + 1
+    # Otherwise, we are not at the last file, so this one will reach max_rows_per_file
+    else:
+        rows_visual = max_rows_per_file
+
+    print(f"Saving file {add_leading_zeroes(file_num)}... ({rows_visual} rows) - '{file_split_name}'")
+
+    # Re-initialize workbook to clear out data from previous file
+    wb_output = openpyxl.Workbook()
+    # Append header values to first row in workbook
+    wb_output['Sheet'].append(xls_headers)
+
+
+# Loop through all rows in xls file
+for row, row_cells in enumerate(ws.iter_rows(min_row=1), start=1):
+
+    # Header row, start new file
+    if row == 1:
+        start_new_split_xls()
+
+    # Rows 2+
+    else:
+        # START NEW FILE
+        # Row count divided by max rows per file has a remainder of 0, time to start a new file
+        if row_count_split_file % max_rows_per_file == 0:
+            start_new_split_xls()
+
+        # ADD DATA
+        # Temp list to hold row values
+        xls_row_values = []
+        # Add values to list, then append to worksheet
+        for item in row_cells:
+            xls_row_values.append(item.value)
+        wb_output['Sheet'].append(xls_row_values)
+
+        # END FILE, SAVE
+        # Checking one row ahead allows us to detect the start of new file, therefore we are at end of this file
+        # Or we've reached the end of the entire xls
+        if ((row_count_split_file + 1) % max_rows_per_file) == 0 or (row == total_row_count):
+
+            wb_output.save(file_split_name)
+
+        # Increment temporary row counter to track where we're at in the current split file
+        row_count_split_file += 1
